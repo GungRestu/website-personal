@@ -1,2 +1,196 @@
-# website-personal
-web
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pemilihan Calon Kandidat Ketua Pemuda</title>
+  <style>
+    :root{--bg:#f6f8fb;--card:#ffffff;--accent:#0b71ea;--muted:#6b7280}
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;background:linear-gradient(180deg,var(--bg),#fff);color:#111}
+    header{background:linear-gradient(90deg,#0b71ea,#6ea8ff);padding:28px 20px;color:#fff}
+    .container{max-width:1000px;margin:18px auto;padding:18px}
+    h1{margin:0;font-size:1.5rem}
+    p.lead{margin:6px 0 0;color:rgba(255,255,255,0.9)}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:18px}
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(15,23,42,0.06);display:flex;flex-direction:column;align-items:center;text-align:center}
+    .avatar{width:110px;height:110px;border-radius:999px;background:linear-gradient(135deg,#eef6ff,#e6f0ff);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:28px;color:var(--accent);margin-bottom:12px}
+    .name{font-weight:700;margin-bottom:6px}
+    .bio{color:var(--muted);font-size:0.9rem;margin-bottom:12px}
+    button.vote{background:var(--accent);color:#fff;border:0;padding:10px 14px;border-radius:10px;cursor:pointer}
+    button.vote[disabled]{opacity:0.6;cursor:not-allowed}
+
+    .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    input[type=text]{padding:10px;border-radius:8px;border:1px solid #e6e9ee;min-width:200px}
+    .muted{color:var(--muted)}
+
+    .results{margin-top:22px;background:transparent}
+    .bar{height:12px;background:#eef2ff;border-radius:999px;overflow:hidden}
+    .bar-inner{height:100%;background:linear-gradient(90deg,#0b71ea,#4ea1ff);width:0}
+
+    .admin{margin-top:18px;padding:12px;border-radius:10px;background:#fff;box-shadow:0 6px 18px rgba(15,23,42,0.04)}
+    .small{font-size:0.85rem}
+
+    footer{margin:30px 0 60px;text-align:center;color:var(--muted);font-size:0.9rem}
+
+    @media (max-width:520px){.controls{flex-direction:column;align-items:stretch}input[type=text]{width:100%}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Pemilihan Calon Kandidat Ketua Pemuda</h1>
+      <p class="lead">Pilih 1 calon. Hasil tersimpan di perangkat (localStorage). Untuk penggunaan riil, sambungkan ke server / database.</p>
+    </div>
+  </header>
+
+  <main class="container" id="app">
+    <section class="voting-area">
+      <div class="controls">
+        <label class="small">Nama Pemilih: <input id="voterName" type="text" placeholder="Masukkan nama Anda" /></label>
+        <div class="muted small">Catatan: untuk demo ini, sistem mencegah voting ganda hanya di peramban yang sama.</div>
+      </div>
+
+      <div class="grid" id="candidates"></div>
+
+      <div class="results" id="results"></div>
+
+      <div class="admin">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="adminPass" type="password" placeholder="Password admin" />
+          <button id="showResultsBtn">Lihat/Riwayat Hasil</button>
+        </div>
+        <p class="small muted" style="margin-top:8px">Password default admin: <b>admin123</b> (ubah di kode sebelum dipakai produksi)</p>
+      </div>
+
+    </section>
+
+    <footer>
+      &copy; <span id="year"></span> Pemilihan Ketua Pemuda — Demo tanpa server
+    </footer>
+  </main>
+
+  <script>
+    // ===== Konfigurasi calon kandidat =====
+    const candidates = [
+      { id: 'c1', name: 'Agus Santoso', bio: 'Aktif di komunitas olahraga dan pelatihan pemuda.' },
+      { id: 'c2', name: 'Budi Prasetyo', bio: 'Penggerak kegiatan sosial dan kewirausahaan pemuda.' },
+      { id: 'c3', name: 'Citra Dewi', bio: 'Fokus pada pendidikan dan pengembangan keterampilan.' }
+    ];
+
+    // ===== Utility penyimpanan (localStorage) =====
+    const STORE_KEY = 'pemilihan_pemuda_votes_v1';
+    const VOTER_KEY = 'pemilihan_pemuda_voter_v1';
+
+    function loadStore(){
+      const raw = localStorage.getItem(STORE_KEY);
+      if(!raw){
+        const init = {};
+        candidates.forEach(c=>init[c.id]=0);
+        localStorage.setItem(STORE_KEY, JSON.stringify(init));
+        return init;
+      }
+      try{ return JSON.parse(raw) } catch(e){
+        // reset if corrupt
+        const init = {}; candidates.forEach(c=>init[c.id]=0); localStorage.setItem(STORE_KEY, JSON.stringify(init)); return init;
+      }
+    }
+
+    function saveStore(store){ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+
+    function loadVoter(){
+      try{ return JSON.parse(localStorage.getItem(VOTER_KEY)||'[]') }catch(e){ return [] }
+    }
+
+    function saveVoter(list){ localStorage.setItem(VOTER_KEY, JSON.stringify(list)); }
+
+    // ===== Render kandidat =====
+    function renderCandidates(){
+      const wrap = document.getElementById('candidates'); wrap.innerHTML='';
+      const store = loadStore();
+      const voters = loadVoter();
+      candidates.forEach(c=>{
+        const div = document.createElement('div'); div.className='card';
+        const initials = c.name.split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase();
+        div.innerHTML = `
+          <div class="avatar">${initials}</div>
+          <div class="name">${c.name}</div>
+          <div class="bio">${c.bio}</div>
+          <div class="small muted">Suara: <strong id="count-${c.id}">${store[c.id]||0}</strong></div>
+          <div style="height:10px"></div>
+          <button class="vote" data-id="${c.id}">Pilih</button>
+        `;
+        wrap.appendChild(div);
+      });
+
+      // attach listeners
+      wrap.querySelectorAll('button.vote').forEach(btn=>{
+        btn.addEventListener('click', ()=>handleVote(btn.dataset.id));
+      });
+    }
+
+    function handleVote(candidateId){
+      const nameInput = document.getElementById('voterName');
+      const voterName = (nameInput.value||'').trim();
+      if(!voterName){ alert('Masukkan nama pemilih terlebih dahulu.'); nameInput.focus(); return; }
+
+      // simple duplicate prevention: check if this voterName already voted
+      const voters = loadVoter();
+      if(voters.includes(voterName.toLowerCase())){ alert('Anda sudah memilih. Satu nama hanya bisa memilih sekali di perangkat ini.'); return; }
+
+      // record vote
+      const store = loadStore();
+      store[candidateId] = (store[candidateId] || 0) + 1;
+      saveStore(store);
+
+      voters.push(voterName.toLowerCase());
+      saveVoter(voters);
+
+      // update UI
+      document.getElementById('count-'+candidateId).textContent = store[candidateId];
+      renderResults();
+      alert('Terima kasih. Suara Anda telah tersimpan.');
+    }
+
+    // ===== Render results (visual) =====
+    function renderResults(){
+      const store = loadStore();
+      const total = Object.values(store).reduce((a,b)=>a+b,0) || 0;
+      const container = document.getElementById('results');
+      container.innerHTML = '<h3>Hasil Sementara</h3>';
+      candidates.forEach(c=>{
+        const count = store[c.id]||0;
+        const percent = total? Math.round((count/total)*100) : 0;
+        const row = document.createElement('div');
+        row.style.marginBottom='12px';
+        row.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><strong>${c.name}</strong></div><div class="small muted">${count} suara — ${percent}%</div></div>
+          <div class="bar"><div class="bar-inner" style="width:${percent}%"></div></div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    // ===== Admin view (simple password check) =====
+    document.getElementById('showResultsBtn').addEventListener('click', ()=>{
+      const pass = document.getElementById('adminPass').value;
+      if(pass === 'admin123'){
+        const store = loadStore();
+        const voters = loadVoter();
+        const report = [ '=== LAPORAN PEMILIHAN (ADMIN) ===', '', 'Total pemilih terdaftar (perangkat): '+voters.length, '' ];
+        candidates.forEach(c=> report.push(`${c.name}: ${store[c.id]||0} suara`));
+        alert(report.join('\n'));
+      } else {
+        alert('Password admin salah.');
+      }
+    });
+
+    // ===== Init =====
+    document.getElementById('year').textContent = new Date().getFullYear();
+    renderCandidates(); renderResults();
+
+  </script>
+</body>
+</html>
+
